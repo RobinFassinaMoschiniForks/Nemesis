@@ -25,7 +25,9 @@ There are two ways to build a new module:
 
 ## Module Structure
 
-Each enrichment module lives in its own directory under `libs/file_enrichment_modules/file_enrichment_modules/`:
+Each enrichment module lives in its own directory under `libs/file_enrichment_modules/file_enrichment_modules/`. The folder name should follow Python's [PEP8 naming conventions](https://peps.python.org/pep-0008/#package-and-module-names):
+
+> Modules should have short, all-lowercase names. Underscores can be used in the module name if it improves readability. Python packages should also have short, all-lowercase names, although the use of underscores is discouraged.
 
 ```
 libs/file_enrichment_modules/file_enrichment_modules/{module_name}/
@@ -66,7 +68,11 @@ def create_enrichment_module() -> EnrichmentModule:
 
 ### Optional: pyproject.toml
 
-If your module needs dependencies not in the base `file_enrichment_modules`, create a `pyproject.toml`:
+If your module needs dependencies not in the base `file_enrichment_modules`, you have two options. First, [install uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+**Option 1:** `cd` to `projects/file_enrichment` or `libs/file_enrichment_modules/` and run `uv add X` for the needed library.
+
+**Option 2 (easier):** Create a `pyproject.toml` in the new module folder:
 
 ```toml
 [project]
@@ -82,7 +88,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 ```
 
-Dependencies are automatically installed when the module loads.
+Then in this folder, run `uv add X` to add a new library. The dynamic module loader will install the necessary dependencies in a virtual env for just that module.
 
 ---
 
@@ -305,7 +311,29 @@ result.findings.append(finding)
 
 ### 3. Transforms
 
-Derived files uploaded to storage:
+Derived files uploaded to storage. Transforms require a `type` (used as a title for display) and an `object_id` to reference the data to display.
+
+#### Transform Metadata Reference
+
+| Metadata Field            | Type         | Description                                                            |
+| ------------------------- | ------------ | ---------------------------------------------------------------------- |
+| file_name                 | string       | Name of the file (i.e., for downloads)                                 |
+| display_type_in_dashboard | display_type | How to display in the dashboard                                        |
+| display_title             | string       | Title to display for the transform in the dashboard                    |
+| default_display           | bool         | `true` to set this transform as the default display                    |
+| offer_as_download         | bool         | If set to `true` offered as a download tab, downloading as `file_name` |
+
+#### Display Types
+
+| Value    | Description                                                                                           |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| monaco   | Display in a Monaco editor, using the extension from `file_name` to help determine the language type. |
+| pdf      | Render as a PDF                                                                                       |
+| image    | Render as an image                                                                                    |
+| markdown | Render as markdown                                                                                    |
+| null     | Don't display content                                                                                 |
+
+#### Basic Transform Example
 
 ```python
 from common.models import Transform
@@ -329,6 +357,46 @@ transform = Transform(
 )
 
 result.transforms.append(transform)
+```
+
+#### Setting a Text File as Default Display
+
+From `file_enrichment_modules/sqlite/analyzer.py`:
+
+```python
+with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as tmp_display_file:
+    display = format_sqlite_data(database_data)
+    tmp_display_file.write(display)
+    tmp_display_file.flush()
+
+    object_id = self.storage.upload_file(tmp_display_file.name)
+
+    displayable_parsed = Transform(
+        type="displayable_parsed",
+        object_id=f"{object_id}",
+        metadata={
+            "file_name": f"{file_enriched.file_name}.txt",
+            "display_type_in_dashboard": "monaco",
+            "default_display": True
+        },
+    )
+enrichment_result.transforms = [displayable_parsed]
+```
+
+#### Offering a File for Download
+
+From `file_enrichment_modules/dotnet/analyzer.py`:
+
+```python
+decompilation = Transform(
+    type = "decompilation",
+    object_id = service_results["decompilation"]["object_id"],
+    metadata = {
+        "file_name" : f"{file_enriched.file_name}.zip",
+        "offer_as_download" : True
+    }
+)
+enrichment_result.transforms = [decompilation]
 ```
 
 ---
